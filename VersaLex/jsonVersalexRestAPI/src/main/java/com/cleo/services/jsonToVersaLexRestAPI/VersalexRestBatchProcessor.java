@@ -4,11 +4,8 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -67,12 +64,9 @@ public class VersalexRestBatchProcessor {
 
     private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 
-    // Timestamp to be added to filenames when outputting to files
-    private static final String fileTime = new SimpleDateFormat("hhmmss").format(new Date());
-
     private Map<String, ObjectNode> authenticatorCache = new HashMap<>();
 
-    public void createActions(ObjectNode actions, ObjectNode resource) throws Exception {
+    private void createActions(ObjectNode actions, ObjectNode resource) throws Exception {
         if (actions != null && actions.size() > 0) {
             ObjectNode updated = (ObjectNode)resource.get("actions");
             if (updated == null) {
@@ -132,7 +126,7 @@ public class VersalexRestBatchProcessor {
         }
     }
 
-    public static String generatePassword() {
+    private static String generatePassword() {
         String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~!@#$%^&*()-_=+[{]}\\|;:\'\"<.>/?";
         SecureRandom random = new SecureRandom();
         return random.ints(0, characters.length()).limit(20)
@@ -140,7 +134,7 @@ public class VersalexRestBatchProcessor {
         
     }
 
-    public static ObjectNode generatePasswordForUser(ObjectNode user) {
+    private static ObjectNode generatePasswordForUser(ObjectNode user) {
         ObjectNode accept = (ObjectNode)user.get("accept");
         if (accept == null) {
             accept = user.putObject("accept");
@@ -149,19 +143,22 @@ public class VersalexRestBatchProcessor {
         return user;
     }
 
-    public static void writePassFile(String host, JsonNode connection) throws IOException {
-        String username = connection.get("username").asText();
-        String password = REST.getSubElement(connection, "accept.password").asText();
+    private static ObjectNode generatedPassword(String authenticator, ObjectNode entry) {
+        //   alias: authenticator
+        //   username: username
+        //   email: email
+        //   password: encrypted password
+        String password = REST.getSubElement(entry, "accept.password").asText();
         String encrypted = OpenSSLCrypt.encrypt("Cleo1234", password);
-        String email = connection.get("email").asText();
-        if (username != null && password != null) {
-            String lineToWrite = host + "," + username + "," + password + "," + encrypted + "," + email + System.lineSeparator();
-            Files.write(Paths.get(String.format("userPasswords_%s.csv", fileTime)), lineToWrite.getBytes(),
-                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-        }
+        ObjectNode result = mapper.createObjectNode();
+        result.put("alias", authenticator);
+        result.put("username", entry.get("username").asText());
+        result.put("email", entry.get("email").asText());
+        result.put("password", encrypted);
+        return result;
     }
 
-    public ObjectNode updateResource(ObjectNode object, ObjectNode updates) throws Exception {
+    private ObjectNode updateResource(ObjectNode object, ObjectNode updates) throws Exception {
         String type = REST.getSubElementAsText(object, "meta.resourceType", "");
         ObjectNode updated = object.deepCopy();
         if (type.equals("user")) {
@@ -179,11 +176,11 @@ public class VersalexRestBatchProcessor {
         return result;
     }
 
-    public ObjectNode loadTemplate(String template) throws Exception {
+    private ObjectNode loadTemplate(String template) throws Exception {
         return (ObjectNode) mapper.readTree(Resources.toString(Resources.getResource(template), Charsets.UTF_8));
     }
 
-    public ObjectNode getAuthenticator(String alias) throws Exception {
+    private ObjectNode getAuthenticator(String alias) throws Exception {
         ObjectNode authenticator;
         if (authenticatorCache.containsKey(alias)) {
             authenticator = authenticatorCache.get(alias);
@@ -196,7 +193,7 @@ public class VersalexRestBatchProcessor {
         return authenticator;
     }
 
-    public String getAliasOrUsername(ObjectNode object) {
+    private String getAliasOrUsername(ObjectNode object) {
         String alias = REST.getSubElementAsText(object, "username");
         if (alias == null) {
             alias = REST.getSubElementAsText(object, "alias");
@@ -204,7 +201,7 @@ public class VersalexRestBatchProcessor {
         return alias;
     }
 
-    public ObjectNode createAuthenticatorFromTemplate(String alias) throws Exception {
+    private ObjectNode createAuthenticatorFromTemplate(String alias) throws Exception {
         ObjectNode authTemplate = loadTemplate("template_authenticator.yaml");
         authTemplate.put("alias", alias);
         ObjectNode authenticator = api.createAuthenticator(authTemplate);
@@ -215,7 +212,7 @@ public class VersalexRestBatchProcessor {
         return authenticator;
     }
 
-    public ObjectNode normalizeActions(JsonNode actions) throws Exception {
+    private ObjectNode normalizeActions(JsonNode actions) throws Exception {
         if (actions != null && actions.isArray()) {
             // convert from [ {alias=x, ...}, {alias=y, ...} ] to { x:{alias=x, ...},
             // y:{alias=y, ...} }
@@ -238,7 +235,7 @@ public class VersalexRestBatchProcessor {
 	 * Get/List Operations                                                    *
 	 *------------------------------------------------------------------------*/
 
-    public ObjectNode injectActions(ObjectNode resource) throws Exception {
+    private ObjectNode injectActions(ObjectNode resource) throws Exception {
         JsonNode actionlinks = resource.path("_links").path("actions");
         if (!actionlinks.isMissingNode()) {
             ObjectNode actions = resource.objectNode();
@@ -255,7 +252,7 @@ public class VersalexRestBatchProcessor {
         return resource;
     }
 
-    public ObjectNode listUser(String username) throws Exception {
+    private ObjectNode listUser(String username) throws Exception {
         ObjectNode user = api.getUser(username);
         if (user == null) {
             throw new ProcessingException("user "+username+" not found");
@@ -263,7 +260,7 @@ public class VersalexRestBatchProcessor {
         return listUser(user);
     }
 
-    public ObjectNode listUser(ObjectNode user) throws Exception {
+    private ObjectNode listUser(ObjectNode user) throws Exception {
         injectActions(user);
         // inject Authenticator
         JsonNode authenticatorlink = user.path("_links").path("authenticator");
@@ -284,7 +281,7 @@ public class VersalexRestBatchProcessor {
         return user;
     }
 
-    public List<ObjectNode> listAuthenticator(String alias, boolean includeUsers) throws Exception {
+    private List<ObjectNode> listAuthenticator(String alias, boolean includeUsers) throws Exception {
         ObjectNode authenticator = api.getAuthenticator(alias);
         if (authenticator == null) {
             throw new ProcessingException("authenticator "+alias+" not found");
@@ -306,7 +303,7 @@ public class VersalexRestBatchProcessor {
         return result;
     }
 
-    public ObjectNode listConnection(String alias) throws Exception {
+    private ObjectNode listConnection(String alias) throws Exception {
         ObjectNode connection = api.getConnection(alias);
         if (connection == null) {
             throw new ProcessingException("connection "+alias+" not found");
@@ -314,7 +311,7 @@ public class VersalexRestBatchProcessor {
         return listConnection(connection);
     }
 
-    public ObjectNode listConnection(ObjectNode connection) throws Exception {
+    private ObjectNode listConnection(ObjectNode connection) throws Exception {
         return injectActions(connection);
     }
 
@@ -322,7 +319,7 @@ public class VersalexRestBatchProcessor {
 	 * Cleanups -- Remove Metadata and Defaults                               *
 	 *------------------------------------------------------------------------*/
 
-    ObjectNode cleanupActions(ObjectNode resource) {
+    private ObjectNode cleanupActions(ObjectNode resource) {
         ObjectNode actions = (ObjectNode)resource.get("actions");
         if (actions != null) {
             Iterator<JsonNode> elements = actions.elements();
@@ -345,7 +342,7 @@ public class VersalexRestBatchProcessor {
         return resource;
     }
 
-    ObjectNode cleanupUser(ObjectNode user) {
+    private ObjectNode cleanupUser(ObjectNode user) {
         REST.removeElements(user,
                 "active",
                 "editable",
@@ -364,7 +361,7 @@ public class VersalexRestBatchProcessor {
         return user;
     }
 
-    ObjectNode cleanupAuthenticator(ObjectNode authenticator) {
+    private ObjectNode cleanupAuthenticator(ObjectNode authenticator) {
         REST.removeElements(authenticator,
                 "active",
                 "editable",
@@ -412,7 +409,7 @@ public class VersalexRestBatchProcessor {
         return authenticator;
     }
 
-    ObjectNode cleanupConnection(ObjectNode connection) {
+    private ObjectNode cleanupConnection(ObjectNode connection) {
         // TODO: this may need more work, but maybe not
         REST.removeElements(connection,
                 "active",
@@ -426,7 +423,7 @@ public class VersalexRestBatchProcessor {
         return connection;
     }
 
-    ObjectNode cleanup(ObjectNode resource) {
+    private ObjectNode cleanup(ObjectNode resource) {
         String type = REST.getSubElementAsText(resource, "meta.resourceType", "");
         switch (type) {
         case "user":
@@ -440,7 +437,7 @@ public class VersalexRestBatchProcessor {
         }
     }
 
-    ArrayNode cleanup(ArrayNode list) {
+    private ArrayNode cleanup(ArrayNode list) {
         Iterator<JsonNode> elements = list.elements();
         while (elements.hasNext()) {
             ObjectNode element = (ObjectNode)elements.next();
@@ -461,7 +458,7 @@ public class VersalexRestBatchProcessor {
      * @param message the (optional) "message" to add
      * @return the modified node
      */
-    ObjectNode insertResult(ObjectNode node, boolean success, String message) {
+    private ObjectNode insertResult(ObjectNode node, boolean success, String message) {
         ObjectNode update = node.objectNode();
         ObjectNode result = update.putObject("result");
         result.put("status", success ? "success" : "error");
@@ -488,7 +485,7 @@ public class VersalexRestBatchProcessor {
         }
     }
 
-    ObjectNode insertResult(ObjectNode node, boolean success, Exception e) {
+    private ObjectNode insertResult(ObjectNode node, boolean success, Exception e) {
         ObjectNode update = insertResult(node, success, e.getMessage());
         if (!(e instanceof ProcessingException)) {
             ArrayNode trace = update.arrayNode();
@@ -499,9 +496,24 @@ public class VersalexRestBatchProcessor {
         return update;
     }
 
+    private ObjectNode passwordReport(ArrayNode passwords) {
+        // create an object like:
+        //   result:
+        //     status: success
+        //     message: generated passwords
+        //   passwords:
+        //   - alias: authenticator
+        //     username: username
+        //     email: email
+        //     password: encrypted password
+        ObjectNode passwordReport = mapper.createObjectNode();
+        passwordReport.set("passwords", passwords);
+        return insertResult(passwordReport, true, "generated passwords");
+    }
+
 	/*- add processors -------------------------------------------------------*/
 
-    public ObjectNode processAddUser(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
+    private ObjectNode processAddUser(ObjectNode entry, ObjectNode actions, ArrayNode results, ArrayNode passwords) throws Exception {
         // get or create the authenticator identified by "alias"
         String alias = REST.asText(entry.remove("alias"));
         if (alias == null) {
@@ -521,7 +533,7 @@ public class VersalexRestBatchProcessor {
             throw new ProcessingException("user not created");
         }
         if (options.contains(Option.generatePass)) {
-            writePassFile(alias, entry);
+            passwords.add(generatedPassword(alias, entry));
         }
         if (actions != null) {
             createActions(actions, user);
@@ -530,7 +542,7 @@ public class VersalexRestBatchProcessor {
         return user;
     }
 
-    public ObjectNode processAddAuthenticator(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
+    private ObjectNode processAddAuthenticator(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
         ObjectNode authenticator = api.createAuthenticator(entry);
         if (authenticator == null) {
             throw new ProcessingException("error: authenticator not created");
@@ -543,7 +555,7 @@ public class VersalexRestBatchProcessor {
         return authenticator;
     }
 
-    public ObjectNode processAddConnection(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
+    private ObjectNode processAddConnection(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
         ObjectNode connection = api.createConnection(entry);
         if (connection == null) {
             throw new ProcessingException("error: connection not created");
@@ -557,21 +569,21 @@ public class VersalexRestBatchProcessor {
         return connection;
     }
 
-    public ObjectNode processAdd(ObjectNode entry, ObjectNode actions, ArrayNode results) throws Exception {
+    private ObjectNode processAdd(ObjectNode entry, ObjectNode actions, ArrayNode results, ArrayNode passwords) throws Exception {
         String type = REST.getSubElementAsText(entry, "type", "user");
         if (type.equals("user")) {
             entry.remove("type");
-            return processAddUser(entry, actions, results);
+            return processAddUser(entry, actions, results, passwords);
         } else if (AUTH_TYPES.contains(type)) {
             return processAddAuthenticator(entry, actions, results);
         } else {
             return processAddConnection(entry, actions, results);
         }
-}
+    }
 
 	/*- list processors ------------------------------------------------------*/
 
-    public ObjectNode processListUser(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
+    private ObjectNode processListUser(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
         String username = REST.getSubElementAsText(entry, "username");
         if (username == null) {
             throw new ProcessingException("\"username\" not found");
@@ -582,7 +594,7 @@ public class VersalexRestBatchProcessor {
         return result;
     }
 
-    public ObjectNode processListAuthenticator(ObjectNode entry, ArrayNode results, Operation operation, boolean includeUsers) throws Exception {
+    private ObjectNode processListAuthenticator(ObjectNode entry, ArrayNode results, Operation operation, boolean includeUsers) throws Exception {
         String alias = REST.getSubElementAsText(entry, "alias");
         if (alias == null) {
             throw new ProcessingException("\"alias\" not found");
@@ -598,7 +610,7 @@ public class VersalexRestBatchProcessor {
         return result.get(0);
     }
 
-    public ObjectNode processListConnection(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
+    private ObjectNode processListConnection(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
         String alias = REST.getSubElementAsText(entry, "alias");
         if (alias == null) {
             throw new ProcessingException("\"alias\" not found");
@@ -609,7 +621,7 @@ public class VersalexRestBatchProcessor {
         return result;
     }
 
-    public ObjectNode processList(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
+    private ObjectNode processList(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
         String type = REST.getSubElementAsText(entry, "type", "user");
         if (type.equals("user")) {
             return processListUser(entry, results, operation);
@@ -635,6 +647,7 @@ public class VersalexRestBatchProcessor {
             file = (ArrayNode)json;
         }
         ArrayNode results = file.arrayNode();
+        ArrayNode passwords = file.arrayNode();
         Iterator<JsonNode> elements = file.elements();
         while (elements.hasNext()) {
             ObjectNode entry = (ObjectNode)elements.next();
@@ -646,7 +659,7 @@ public class VersalexRestBatchProcessor {
                 ObjectNode actions = normalizeActions(entry.remove("actions"));
                 switch (operation) {
                 case add:
-                    processAdd(entry, actions, results);
+                    processAdd(entry, actions, results, passwords);
                     break;
                 case list:
                     processList(entry, results, operation);
@@ -680,6 +693,9 @@ public class VersalexRestBatchProcessor {
             }
         }
         cleanup(results);
+        if (passwords.size() > 0) {
+            results.add(passwordReport(passwords));
+        }
         mapper.writeValue(System.out, results);
     }
 
