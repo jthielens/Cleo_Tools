@@ -100,7 +100,7 @@ public class VersalexRestBatchProcessor {
                             action.remove("schedule");
                         }
                         Operation operation = Operation.valueOf(REST.asText(action.remove("operation"), "add"));
-                        JsonNode existing = updated.get(actionName); 
+                        JsonNode existing = updated.get(actionName);
                         if (existing == null) {
                             if (!operation.equals(Operation.delete)) {
                                 ObjectNode newAction = api.createAction(action);
@@ -131,7 +131,6 @@ public class VersalexRestBatchProcessor {
         SecureRandom random = new SecureRandom();
         return random.ints(0, characters.length()).limit(20)
                 .mapToObj(i -> String.valueOf(characters.charAt(i))).collect(Collectors.joining());
-        
     }
 
     private static ObjectNode generatePasswordForUser(ObjectNode user) {
