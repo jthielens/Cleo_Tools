@@ -109,17 +109,14 @@ public class VersalexRestBatchProcessor {
                         JsonNode existing = updated.get(actionName); 
                         if (existing == null) {
                             if (!operation.equals(Operation.delete)) {
-System.err.println("creating new action "+actionName);
                                 ObjectNode newAction = api.createAction(action);
                                 updated.set(actionName, newAction);
                             }
                         } else {
                             if (operation.equals(Operation.delete)) {
-System.err.println("deleting existing action "+actionName);
                                 api.delete(existing);
                                 updated.remove(actionName);
                             } else {
-System.err.println("updating existing action "+actionName);
                                 ObjectNode newAction = api.put(actions, existing);
                                 updated.replace(actionName, newAction);
                             }
@@ -680,7 +677,6 @@ System.err.println("updating existing action "+actionName);
                 }
             } catch (Exception e) {
                 results.add(insertResult(original, false, e));
-                e.printStackTrace(System.err);
             }
         }
         cleanup(results);
