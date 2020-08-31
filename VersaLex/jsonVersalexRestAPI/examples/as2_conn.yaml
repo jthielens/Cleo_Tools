@@ -1,0 +1,19 @@
+---
+- alias: RESTAS2
+  type: as2
+  localName: restas2_2
+  partnerName: restas2_2
+  connect:
+    url: http://localhost:5080/as2
+  outgoing:
+    subject: test
+    storage:
+      outbox: outbox/
+  incoming:
+    storage:
+      inbox: inbox/
+  actions:
+  - alias: sendTest
+    commands:
+    - LCOPY ../inbox/* outbox/
+    - PUT -DEL *

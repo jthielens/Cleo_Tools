@@ -1,5 +1,8 @@
 package com.cleo.services.jsonToVersaLexRestAPI;
 
+import static com.cleo.services.jsonToVersaLexRestAPI.VersalexRestBatchProcessor.Option.generatePass;
+import static com.cleo.services.jsonToVersaLexRestAPI.VersalexRestBatchProcessor.Option.update;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -11,7 +14,7 @@ import org.apache.commons.cli.ParseException;
 import java.io.IOException;
 
 
-public class main {
+public class Main {
 
   static Option helpOption = Option.builder()
           .longOpt("help")
@@ -118,9 +121,11 @@ public class main {
       System.out.println("Failed to create REST Client: " + ex.getMessage());
       System.exit(-1);
     }
-    JsonVersalexRestAPI jsonVersalexRestAPI = new JsonVersalexRestAPI(restClient, cmd.hasOption("generate-pass"), cmd.hasOption("update"));
     if (cmd.getOptionValue("file") != null) {
-      jsonVersalexRestAPI.processFile(cmd.getOptionValue("file"));
+      VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
+              .set(generatePass, cmd.hasOption("generate-pass"))
+              .set(update, cmd.hasOption("update"));
+      processor.processFile(cmd.getOptionValue("file"));
     }
   }
 
