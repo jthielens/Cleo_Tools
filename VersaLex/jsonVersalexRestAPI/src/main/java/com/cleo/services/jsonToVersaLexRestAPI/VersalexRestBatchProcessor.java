@@ -37,6 +37,10 @@ public class VersalexRestBatchProcessor {
         }
         return this;
     }
+    public VersalexRestBatchProcessor setExportPassword(String exportPassword) {
+        this.exportPassword = exportPassword;
+        return this;
+    }
 
     public enum Operation {
         add ("created"),
@@ -55,6 +59,7 @@ public class VersalexRestBatchProcessor {
 
     private REST api;
     private EnumSet<Option> options;
+    private String exportPassword;
 
     public enum AuthenticatorType {nativeUser, systemLdap, authConnector};
     private static final Set<String> AUTH_TYPES = EnumSet.allOf(AuthenticatorType.class)
@@ -142,13 +147,15 @@ public class VersalexRestBatchProcessor {
         return user;
     }
 
-    private static ObjectNode generatedPassword(String authenticator, ObjectNode entry) {
+    private ObjectNode generatedPassword(String authenticator, ObjectNode entry) {
         //   alias: authenticator
         //   username: username
         //   email: email
         //   password: encrypted password
         String password = REST.getSubElement(entry, "accept.password").asText();
-        String encrypted = OpenSSLCrypt.encrypt("Cleo1234", password);
+        String encrypted = Strings.isNullOrEmpty(exportPassword)
+                ? password
+                : OpenSSLCrypt.encrypt(exportPassword, password);
         ObjectNode result = mapper.createObjectNode();
         result.put("alias", authenticator);
         result.put("username", entry.get("username").asText());
@@ -705,5 +712,6 @@ public class VersalexRestBatchProcessor {
     public VersalexRestBatchProcessor(REST api, EnumSet<Option> options) {
         this.api = api;
         this.options = options;
+        this.exportPassword = null;
     }
 }

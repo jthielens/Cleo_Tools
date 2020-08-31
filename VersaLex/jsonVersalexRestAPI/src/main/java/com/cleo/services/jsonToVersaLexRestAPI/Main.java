@@ -9,125 +9,241 @@ import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
 
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.google.common.base.Strings;
+
+import java.io.File;
 import java.io.IOException;
-
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class Main {
 
-  static Option helpOption = Option.builder()
-          .longOpt("help")
-          .build();
+    private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 
-  private static Options getOptions() {
-    Options options = new Options();
+    static Option helpOption = Option.builder().longOpt("help").build();
 
-    Option hostnameOption = Option.builder("h")
-            .longOpt("hostname")
-            .desc("VersaLex hostname")
-            .hasArg()
-            .argName("HOSTNAME")
-            .required()
-            .build();
-    options.addOption(hostnameOption);
+    private static Options getOptions() {
+        Options options = new Options();
 
-    Option portOption = Option.builder()
-            .longOpt("port")
-            .desc("VersaLex HTTP Port")
-            .hasArg()
-            .argName("PORT")
-            .required()
-            .build();
-    options.addOption(portOption);
+        options.addOption(Option.builder("h")
+                .longOpt("hostname")
+                .desc("VersaLex hostname")
+                .hasArg()
+                .argName("HOSTNAME")
+                .required(false)
+                .build());
 
-    Option usernameOption = Option.builder("u")
-            .longOpt("username")
-            .desc("Username")
-            .hasArg()
-            .argName("USERNAME")
-            .required()
-            .build();
-    options.addOption(usernameOption);
+        options.addOption(Option.builder()
+                .longOpt("port")
+                .desc("VersaLex HTTP Port")
+                .hasArg()
+                .argName("PORT")
+                .required(false)
+                .build());
 
-    Option passwordOption = Option.builder("p")
-            .longOpt("password")
-            .desc("Password")
-            .hasArg()
-            .argName("PASSWORD")
-            .required()
-            .build();
-    options.addOption(passwordOption);
+        options.addOption(Option.builder("u")
+                .longOpt("username")
+                .desc("Username")
+                .hasArg()
+                .argName("USERNAME")
+                .required(false)
+                .build());
 
-    Option jsonFileOption = Option.builder()
-            .longOpt("file")
-            .desc("JSON file containing hosts")
-            .hasArg()
-            .argName("FILE")
-            .required(false)
-            .build();
-    options.addOption(jsonFileOption);
+        options.addOption(Option.builder("p")
+                .longOpt("password")
+                .desc("Password")
+                .hasArg()
+                .argName("PASSWORD")
+                .required(false)
+                .build());
 
-    Option genPassOption = Option.builder()
-            .longOpt("generate-pass")
-            .desc("Generate Passwords for users")
-            .required(false)
-            .build();
-    options.addOption(genPassOption);
+        options.addOption(Option.builder()
+                .longOpt("file")
+                .desc("JSON file containing hosts")
+                .hasArg()
+                .argName("FILE")
+                .required(false)
+                .build());
 
-    Option updateOption = Option.builder()
-            .longOpt("update")
-            .desc("Updates existing hosts")
-            .required(false)
-            .build();
-    options.addOption(updateOption);
+        options.addOption(Option.builder()
+                .longOpt("generate-pass")
+                .desc("Generate Passwords for users")
+                .required(false)
+                .build());
 
-    options.addOption(helpOption);
+        options.addOption(Option.builder()
+                .longOpt("export-pass")
+                .desc("Password to encrypt generated passwords")
+                .hasArg()
+                .argName("PASSWORD")
+                .required(false)
+                .build());
 
-    return options;
-  }
+        options.addOption(Option.builder()
+                .longOpt("update")
+                .desc("Updates existing hosts")
+                .required(false)
+                .build());
 
-  public static void checkHelp(String[] args) {
-    Options options = new Options();
-    options.addOption(helpOption);
-    CommandLineParser parser = new DefaultParser();
-    try {
-      CommandLine cmd = parser.parse(options, args, false);
-      if (cmd.hasOption("help")) {
-        HelpFormatter formatter = new HelpFormatter();
-        formatter.printHelp( "JsonToVersalexRESTAPI", getOptions());
-        System.exit(0);
-      }
-    } catch (ParseException e) {
-      ;
+        options.addOption(Option.builder()
+                .longOpt("profile")
+                .desc("Connection profile to use")
+                .hasArg()
+                .argName("PROFILE")
+                .required(false)
+                .build());
+
+        options.addOption(Option.builder()
+                .longOpt("save")
+                .desc("Save/update profile")
+                .required(false)
+                .build());
+
+        options.addOption(helpOption);
+
+        return options;
     }
-  }
 
-  public static void main(String[] args) throws IOException {
-    CommandLineParser parser = new DefaultParser();
-    CommandLine cmd = null;
-    try {
-      Options options = getOptions();
-      checkHelp(args);
-      cmd = parser.parse(options, args);
-    } catch (Exception ex) {
-      System.out.println("Could not parse command line arguments: " + ex.getMessage());
-      System.exit(-1);
+    public static void checkHelp(CommandLine cmd) {
+        if (cmd.hasOption("help")) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("JsonToVersalexRESTAPI", getOptions());
+            System.exit(0);
+        }
     }
-    REST restClient = null;
-    try {
-      restClient = new REST("http://" + cmd.getOptionValue("hostname"), Integer.parseInt(cmd.getOptionValue("port")), cmd.getOptionValue("username"), cmd.getOptionValue("password"));
-    } catch (Exception ex) {
-      System.out.println("Failed to create REST Client: " + ex.getMessage());
-      System.exit(-1);
-    }
-    if (cmd.getOptionValue("file") != null) {
-      VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
-              .set(generatePass, cmd.hasOption("generate-pass"))
-              .set(update, cmd.hasOption("update"));
-      processor.processFile(cmd.getOptionValue("file"));
-    }
-  }
 
+    public static Profile loadProfile(String name) {
+        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {
+        };
+        Path cic = Paths.get(System.getProperty("user.home"), ".cic");
+        try {
+            Map<String, Profile> profiles = mapper.readValue(cic.resolve("profiles").toFile(), typeRef);
+            return profiles.get(name);
+        } catch (JsonParseException | JsonMappingException e) {
+            System.err.println("error parsing file $HOME/.cic/profiles: " + e.getMessage());
+        } catch (IOException e) {
+            System.err.println("error loading file $HOME/.cic/profiles: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public static void saveProfile(String name, Profile profile) {
+        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {
+        };
+        Path cic = Paths.get(System.getProperty("user.home"), ".cic");
+        if (!cic.toFile().isDirectory()) {
+            cic.toFile().mkdir();
+        }
+        try {
+            File file = cic.resolve("profiles").toFile();
+            Map<String, Profile> profiles;
+            try {
+                profiles = mapper.readValue(file, typeRef);
+            } catch (IOException e) {
+                profiles = new HashMap<>();
+            }
+            profiles.put(name, profile);
+            mapper.writeValue(cic.resolve("profiles").toFile(), profiles);
+        } catch (JsonParseException | JsonMappingException e) {
+            System.err.println("error parsing file $HOME/.cic/profiles: " + e.getMessage());
+        } catch (IOException e) {
+            System.err.println("error updating file $HOME/.cic/profiles: " + e.getMessage());
+        }
+    }
+
+    public static Profile processProfileOptions(CommandLine cmd) throws Exception {
+        Profile profile = null;
+        List<String> missing = new ArrayList<>();
+        if (cmd.hasOption("profile")) {
+            profile = loadProfile(cmd.getOptionValue("profile"));
+        }
+        if (profile == null) {
+            profile = new Profile();
+        }
+        if (cmd.hasOption("hostname")) {
+            profile.setHost(cmd.getOptionValue("hostname"));
+        }
+        if (cmd.hasOption("port")) {
+            profile.setPort(Integer.parseInt(cmd.getOptionValue("port")));
+        }
+        if (cmd.hasOption("username")) {
+            profile.setUsername(cmd.getOptionValue("username"));
+        }
+        if (cmd.hasOption("password")) {
+            profile.setPassword(cmd.getOptionValue("password"));
+        }
+        if (cmd.hasOption("export-pass")) {
+            profile.setExportPassword(cmd.getOptionValue("export-pass"));
+        }
+        if (cmd.hasOption("save")) {
+            saveProfile(cmd.getOptionValue("profile", "default"), profile);
+        }
+        if (Strings.isNullOrEmpty(profile.getHost())) {
+            missing.add("hostname (h)");
+        }
+        if (profile.getPort() < 0) {
+            missing.add("port");
+        }
+        if (Strings.isNullOrEmpty(profile.getUsername())) {
+            missing.add("username (u)");
+        }
+        if (Strings.isNullOrEmpty(profile.getPassword())) {
+            missing.add("password (p)");
+        }
+        if (!missing.isEmpty()) {
+            throw new Exception("Missing required options or profile values: "
+                    + missing.stream().collect(Collectors.joining(", ")));
+        }
+        return profile;
+    }
+
+    public static void main(String[] args) throws IOException {
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = null;
+        try {
+            Options options = getOptions();
+            cmd = parser.parse(options, args);
+            checkHelp(cmd);
+        } catch (Exception ex) {
+            System.out.println("Could not parse command line arguments: " + ex.getMessage());
+            System.exit(-1);
+        }
+
+        Profile profile = null;
+        try {
+            profile = processProfileOptions(cmd);
+        } catch (Exception e) {
+            System.out.println("Could not parse command line arguments: " + e.getMessage());
+            System.exit(-1);
+        }
+
+        REST restClient = null;
+        try {
+            restClient = new REST("http://" + profile.getHost(), profile.getPort(), profile.getUsername(),
+                    profile.getPassword());
+        } catch (Exception ex) {
+            System.out.println("Failed to create REST Client: " + ex.getMessage());
+            System.exit(-1);
+        }
+        if (cmd.getOptionValue("file") != null) {
+            VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
+                    .set(generatePass, cmd.hasOption("generate-pass")).set(update, cmd.hasOption("update"));
+            if (!Strings.isNullOrEmpty(profile.getExportPassword())) {
+                processor.setExportPassword(profile.getExportPassword());
+            }
+            processor.processFile(cmd.getOptionValue("file"));
+        }
+    }
 
 }
