@@ -31,10 +31,12 @@ public class Main {
 
     private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 
-    static Option helpOption = Option.builder().longOpt("help").build();
-
     private static Options getOptions() {
         Options options = new Options();
+
+        options.addOption(Option.builder()
+                .longOpt("help")
+                .build());
 
         options.addOption(Option.builder("h")
                 .longOpt("hostname")
@@ -109,8 +111,6 @@ public class Main {
                 .desc("Save/update profile")
                 .required(false)
                 .build());
-
-        options.addOption(helpOption);
 
         return options;
     }
