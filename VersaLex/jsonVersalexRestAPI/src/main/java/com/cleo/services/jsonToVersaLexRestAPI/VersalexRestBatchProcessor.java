@@ -14,10 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.checkerframework.checker.formatter.qual.ConversionCategory;
-
 import com.cleo.services.jsonToVersaLexRestAPI.csv.ConvertCSVToHarmonyJSON;
-import com.cleo.services.jsonToVersaLexRestAPI.csv.ConvertCSVToHarmonyJSON.Type;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
