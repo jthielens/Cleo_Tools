@@ -1,5 +1,8 @@
 package com.cleo.services.jsonToVersaLexRestAPI;
 
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Iterator;
 
@@ -14,9 +17,13 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.TrustAllStrategy;
 import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.util.EntityUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,21 +43,32 @@ public class REST {
 
 	private String baseUrl;
 	private String authToken;
+	private boolean insecure;
 
 	private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 
-	public REST(String url, int port, String username, String password) throws Exception {
+	public REST(String url, int port, String username, String password, boolean insecure) throws Exception {
 		this.baseUrl = url + ":" + port;
+		this.insecure = insecure;
 		this.authToken = authorize(username, password);
 	}
 
 	private static HttpClient defaultHTTPClient = null;
 
-	public static HttpClient getDefaultHTTPClient() {
+	public HttpClient getDefaultHTTPClient() {
 		if (defaultHTTPClient == null) {
-			defaultHTTPClient = HttpClients.custom()
-					.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())
-					.build();
+		    HttpClientBuilder builder = HttpClients.custom()
+					.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build());
+		    if (insecure) {
+		        try {
+                    builder.setSSLContext(new SSLContextBuilder().loadTrustMaterial(null, TrustAllStrategy.INSTANCE).build())
+                            .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE);
+                } catch (KeyManagementException | NoSuchAlgorithmException | KeyStoreException e) {
+                    // connection will fail anyway, so just print a warning
+                    System.err.println("warning: "+e.getMessage());
+                }
+		    }
+			defaultHTTPClient = builder.build();
 		}
 		return defaultHTTPClient;
 	}
@@ -78,7 +96,7 @@ public class REST {
 	 *------------------------------------------------------------------------*/
 
 	private ObjectNode execute(HttpRequestBase request, int successCode) throws Exception {
-		HttpClient client = REST.getDefaultHTTPClient();
+		HttpClient client = getDefaultHTTPClient();
 		if (this.authToken != null) {
 			request.addHeader("Authorization", "Bearer " + this.authToken);
 		}

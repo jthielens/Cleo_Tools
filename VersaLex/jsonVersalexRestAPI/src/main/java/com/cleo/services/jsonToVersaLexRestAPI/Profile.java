@@ -3,6 +3,8 @@ package com.cleo.services.jsonToVersaLexRestAPI;
 public class Profile {
     private String host = null;
     private int port = -1;
+    private boolean secure = false;
+    private boolean insecure = false;
     private String username = null;
     private String password = null;
     private String exportPassword = null;
@@ -19,6 +21,20 @@ public class Profile {
     }
     public Profile setPort(int port) {
         this.port = port;
+        return this;
+    }
+    public boolean isSecure() {
+        return secure;
+    }
+    public Profile setSecure(boolean secure) {
+        this.secure = secure;
+        return this;
+    }
+    public boolean isInsecure() {
+        return insecure;
+    }
+    public Profile setInsecure(boolean insecure) {
+        this.insecure = insecure;
         return this;
     }
     public String getUsername() {

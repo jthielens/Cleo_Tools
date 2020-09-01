@@ -54,6 +54,18 @@ public class Main {
                 .required(false)
                 .build());
 
+        options.addOption(Option.builder("s")
+                .longOpt("secure")
+                .desc("Use https instead of http")
+                .required(false)
+                .build());
+
+        options.addOption(Option.builder("k")
+                .longOpt("insecure")
+                .desc("Disable https security checks")
+                .required(false)
+                .build());
+
         options.addOption(Option.builder("u")
                 .longOpt("username")
                 .desc("Username")
@@ -112,6 +124,12 @@ public class Main {
                 .required(false)
                 .build());
 
+        options.addOption(Option.builder()
+                .longOpt("remove")
+                .desc("Remove profile")
+                .required(false)
+                .build());
+
         return options;
     }
 
@@ -123,30 +141,58 @@ public class Main {
         }
     }
 
-    public static Profile loadProfile(String name) {
-        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {
-        };
+    public static Profile loadProfile(String name, boolean quiet) {
+        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {};
         Path cic = Paths.get(System.getProperty("user.home"), ".cic");
+        Path filename = cic.resolve("profiles");
         try {
-            Map<String, Profile> profiles = mapper.readValue(cic.resolve("profiles").toFile(), typeRef);
+            Map<String, Profile> profiles = mapper.readValue(filename.toFile(), typeRef);
             return profiles.get(name);
         } catch (JsonParseException | JsonMappingException e) {
-            System.err.println("error parsing file $HOME/.cic/profiles: " + e.getMessage());
+            System.err.println("error parsing file "+filename+": "+ e.getMessage());
         } catch (IOException e) {
-            System.err.println("error loading file $HOME/.cic/profiles: " + e.getMessage());
+            if (!quiet) {
+                System.err.println("error loading file "+filename+": " + e.getMessage());
+            }
         }
         return null;
     }
 
-    public static void saveProfile(String name, Profile profile) {
-        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {
-        };
+    public static void removeProfile(String name, Profile profile) {
+        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {};
         Path cic = Paths.get(System.getProperty("user.home"), ".cic");
+        Path filename = cic.resolve("profiles");
+        try {
+            File file = filename.toFile();
+            Map<String, Profile> profiles;
+            try {
+                profiles = mapper.readValue(file, typeRef);
+            } catch (IOException e) {
+                System.err.println(filename+" not found while removing profile "+name+": "+e.getMessage());
+                return; // no file, nothing to remove
+            }
+            if (!profiles.containsKey(name)) {
+                System.err.println("profile "+name+" not found in "+filename);
+                return; // nothing to remove
+            }
+            profiles.remove(name);
+            mapper.writeValue(filename.toFile(), profiles);
+        } catch (JsonParseException | JsonMappingException e) {
+            System.err.println("error parsing file "+filename+": " + e.getMessage());
+        } catch (IOException e) {
+            System.err.println("error updating file "+filename+": " + e.getMessage());
+        }
+    }
+
+    public static void saveProfile(String name, Profile profile) {
+        TypeReference<Map<String, Profile>> typeRef = new TypeReference<Map<String, Profile>>() {};
+        Path cic = Paths.get(System.getProperty("user.home"), ".cic");
+        Path filename = cic.resolve("profiles");
         if (!cic.toFile().isDirectory()) {
             cic.toFile().mkdir();
         }
         try {
-            File file = cic.resolve("profiles").toFile();
+            File file = filename.toFile();
             Map<String, Profile> profiles;
             try {
                 profiles = mapper.readValue(file, typeRef);
@@ -154,20 +200,19 @@ public class Main {
                 profiles = new HashMap<>();
             }
             profiles.put(name, profile);
-            mapper.writeValue(cic.resolve("profiles").toFile(), profiles);
+            mapper.writeValue(filename.toFile(), profiles);
         } catch (JsonParseException | JsonMappingException e) {
-            System.err.println("error parsing file $HOME/.cic/profiles: " + e.getMessage());
+            System.err.println("error parsing file "+filename+": " + e.getMessage());
         } catch (IOException e) {
-            System.err.println("error updating file $HOME/.cic/profiles: " + e.getMessage());
+            System.err.println("error updating file "+filename+": " + e.getMessage());
         }
     }
 
     public static Profile processProfileOptions(CommandLine cmd) throws Exception {
         Profile profile = null;
         List<String> missing = new ArrayList<>();
-        if (cmd.hasOption("profile")) {
-            profile = loadProfile(cmd.getOptionValue("profile"));
-        }
+        profile = loadProfile(cmd.getOptionValue("profile", "default"),
+                !cmd.hasOption("profile") || cmd.hasOption("remove") || cmd.hasOption("save"));
         if (profile == null) {
             profile = new Profile();
         }
@@ -177,6 +222,12 @@ public class Main {
         if (cmd.hasOption("port")) {
             profile.setPort(Integer.parseInt(cmd.getOptionValue("port")));
         }
+        if (cmd.hasOption("secure")) {
+            profile.setSecure(true);
+        }
+        if (cmd.hasOption("insecure")) {
+            profile.setInsecure(true);
+        }
         if (cmd.hasOption("username")) {
             profile.setUsername(cmd.getOptionValue("username"));
         }
@@ -185,9 +236,6 @@ public class Main {
         }
         if (cmd.hasOption("export-pass")) {
             profile.setExportPassword(cmd.getOptionValue("export-pass"));
-        }
-        if (cmd.hasOption("save")) {
-            saveProfile(cmd.getOptionValue("profile", "default"), profile);
         }
         if (Strings.isNullOrEmpty(profile.getHost())) {
             missing.add("hostname (h)");
@@ -201,7 +249,17 @@ public class Main {
         if (Strings.isNullOrEmpty(profile.getPassword())) {
             missing.add("password (p)");
         }
-        if (!missing.isEmpty()) {
+        if (cmd.hasOption("remove")) {
+            removeProfile(cmd.getOptionValue("profile", "default"), profile);
+        }
+        if (cmd.hasOption("save")) {
+            if (!missing.isEmpty()) {
+                throw new Exception("Missing required options for --save: "
+                    + missing.stream().collect(Collectors.joining(", ")));
+            }
+            saveProfile(cmd.getOptionValue("profile", "default"), profile);
+        }
+        if (!missing.isEmpty() && cmd.hasOption("input")) {
             throw new Exception("Missing required options or profile values: "
                     + missing.stream().collect(Collectors.joining(", ")));
         }
@@ -228,15 +286,16 @@ public class Main {
             System.exit(-1);
         }
 
-        REST restClient = null;
-        try {
-            restClient = new REST("http://" + profile.getHost(), profile.getPort(), profile.getUsername(),
-                    profile.getPassword());
-        } catch (Exception ex) {
-            System.out.println("Failed to create REST Client: " + ex.getMessage());
-            System.exit(-1);
-        }
         if (cmd.hasOption("input")) {
+            REST restClient = null;
+            try {
+                String protocol = profile.isSecure() ? "https" : "http";
+                restClient = new REST(protocol + "://" + profile.getHost(), profile.getPort(), profile.getUsername(),
+                        profile.getPassword(), profile.isInsecure());
+            } catch (Exception ex) {
+                System.out.println("Failed to create REST Client: " + ex.getMessage());
+                System.exit(-1);
+            }
             VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
                     .set(generatePass, cmd.hasOption("generate-pass")).set(update, cmd.hasOption("update"));
             if (!Strings.isNullOrEmpty(profile.getExportPassword())) {
