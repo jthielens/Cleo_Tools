@@ -269,17 +269,11 @@ public class Main {
     public static void main(String[] args) throws IOException {
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = null;
+        Profile profile = null;
         try {
             Options options = getOptions();
             cmd = parser.parse(options, args);
             checkHelp(cmd);
-        } catch (Exception ex) {
-            System.out.println("Could not parse command line arguments: " + ex.getMessage());
-            System.exit(-1);
-        }
-
-        Profile profile = null;
-        try {
             profile = processProfileOptions(cmd);
         } catch (Exception e) {
             System.out.println("Could not parse command line arguments: " + e.getMessage());
@@ -292,8 +286,8 @@ public class Main {
                 String protocol = profile.isSecure() ? "https" : "http";
                 restClient = new REST(protocol + "://" + profile.getHost(), profile.getPort(), profile.getUsername(),
                         profile.getPassword(), profile.isInsecure());
-            } catch (Exception ex) {
-                System.out.println("Failed to create REST Client: " + ex.getMessage());
+            } catch (Exception e) {
+                System.out.println("Failed to create REST Client: " + e.getMessage());
                 System.exit(-1);
             }
             VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
