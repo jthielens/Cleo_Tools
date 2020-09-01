@@ -70,9 +70,9 @@ public class Main {
                 .required(false)
                 .build());
 
-        options.addOption(Option.builder()
-                .longOpt("file")
-                .desc("JSON file containing hosts")
+        options.addOption(Option.builder("i")
+                .longOpt("input")
+                .desc("input file YAML, JSON or CSV")
                 .hasArg()
                 .argName("FILE")
                 .required(false)
@@ -236,13 +236,13 @@ public class Main {
             System.out.println("Failed to create REST Client: " + ex.getMessage());
             System.exit(-1);
         }
-        if (cmd.getOptionValue("file") != null) {
+        if (cmd.hasOption("input")) {
             VersalexRestBatchProcessor processor = new VersalexRestBatchProcessor(restClient)
                     .set(generatePass, cmd.hasOption("generate-pass")).set(update, cmd.hasOption("update"));
             if (!Strings.isNullOrEmpty(profile.getExportPassword())) {
                 processor.setExportPassword(profile.getExportPassword());
             }
-            processor.processFile(cmd.getOptionValue("file"));
+            processor.processFiles(cmd.getOptionValues("input"));
         }
     }
 

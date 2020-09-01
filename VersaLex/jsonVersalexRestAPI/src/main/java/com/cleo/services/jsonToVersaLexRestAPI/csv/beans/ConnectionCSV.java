@@ -1,10 +1,9 @@
-package com.cleo.services.harmony;
+package com.cleo.services.jsonToVersaLexRestAPI.csv.beans;
 
-import com.cleo.services.harmony.Action;
 import lombok.Getter;
 import lombok.Setter;
 
-public class ClientCSV {
+public class ConnectionCSV {
 
   @Getter@Setter
   private String type;
@@ -19,5 +18,5 @@ public class ClientCSV {
   @Getter@Setter
   private String receivedbox;
   @Getter@Setter
-  private Action[] actions;
+  private ActionCSV[] actions;
 }

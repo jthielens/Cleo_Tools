@@ -1,24 +1,42 @@
-package com.cleo.services.harmony;
+package com.cleo.services.jsonToVersaLexRestAPI.csv;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
+import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.StringReader;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.cleo.services.harmony.pojo.AS2;
-import com.cleo.services.harmony.pojo.ActionPOJO;
-import com.cleo.services.harmony.pojo.SFTP;
-import com.cleo.services.harmony.pojo.FTP;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+
+import com.cleo.services.jsonToVersaLexRestAPI.REST;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.AS2CSV;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.ActionCSV;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.ConnectionCSV;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.FTPCSV;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.MailboxCSV;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.SFTPCSV;
+import com.cleo.services.jsonToVersaLexRestAPI.pojo.AS2;
+import com.cleo.services.jsonToVersaLexRestAPI.pojo.ActionPOJO;
+import com.cleo.services.jsonToVersaLexRestAPI.pojo.FTP;
+import com.cleo.services.jsonToVersaLexRestAPI.pojo.SFTP;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.google.common.base.Charsets;
+import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.internal.LinkedTreeMap;
@@ -30,116 +48,228 @@ import com.opencsv.exceptions.CsvException;
 
 public class ConvertCSVToHarmonyJSON {
 
+    private static final Options options = new Options()
+
+        .addOption(Option.builder("i")
+                .longOpt("input")
+                .desc("Input File")
+                .hasArg()
+                .argName("FILE")
+                .required(false)
+                .build())
+
+        .addOption(Option.builder("o")
+                .longOpt("output")
+                .desc("Output File")
+                .hasArg()
+                .argName("FILE")
+                .required(false)
+                .build());
+
+
 	public static String actionSeparatorRegex = "[\\|;]";
 
 	public static Gson gson = new Gson();
 
-	public static enum  Types {
+	public static enum  Type {
+	    GROUP,
+	    USER,
 		AS2,
 		SFTP,
 		FTP
 	}
 	
+    private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+
 	public static void main(String[] args) throws IOException, CsvException {
-		new ApplicationProperties().readProperties();
-		String mailboxFilename = ApplicationProperties.appProps.getProperty("mailBoxFile");
-		System.out.println("Finished reading the app config file...");
-		
+        CommandLine cmd = null;
+        try {
+            cmd = new DefaultParser().parse(options, args);
+        } catch (Exception e) {
+            System.out.println("Could not parse command line arguments: " + e.getMessage());
+            System.exit(-1);
+        }
+
         JsonArray jsonArr = new JsonArray();
 
-        if (ApplicationProperties.appProps.contains("groupFile")) {
-			CSVReader grpReader = new CSVReader(new FileReader(ApplicationProperties.appProps.getProperty("groupFile")));
-			List<String[]> grpElements = grpReader.readAll();
-			for (String[] line : grpElements) {
-				if (!line[0].equals("UserAlias"))
-					jsonArr.add(contructUsrGrpJSON(line));
-			}
-		}
+        for (String fn : cmd.getOptionValues("input")) {
+            String content = fn.equals("-")
+                    ? new String(ByteStreams.toByteArray(System.in))
+                    : new String(Files.readAllBytes(Paths.get(fn)));
+            try {
+                switch (getCSVFileType(content)) {
+                case AS2:
+                    {
+                        List<AS2> connections = createAS2Hosts(content);
+                        for (AS2 as2Host : connections) {
+                            jsonArr.add(gson.toJsonTree(as2Host));
+                        }
+                    }
+                    break;
+                case SFTP:
+                    {
+                        List<SFTP> connections = createSFTPHosts(content);
+                        for (SFTP sftpHost : connections) {
+                            jsonArr.add(gson.toJsonTree(sftpHost));
+                        }
+                    }
+                    break;
+                case FTP:
+                    {
+                        List<FTP> connections = createFTPHosts(content);
+                        for (FTP ftpHost : connections) {
+                            jsonArr.add(gson.toJsonTree(ftpHost));
+                        }
+                    }
+                    break;
+                case GROUP:
+                    CSVReader grpReader = new CSVReader(new StringReader(content));
+                    List<String[]> grpElements = grpReader.readAll();
+                    for (String[] line : grpElements) {
+                        if (!line[0].equals("UserAlias"))
+                            jsonArr.add(contructUsrGrpJSON(line));
+                    }
+                    break;
+                case USER:
+                    HeaderColumnNameMappingStrategy<MailboxCSV> mailboxStrategy = new HeaderColumnNameMappingStrategy<>();
+                    mailboxStrategy.setType(MailboxCSV.class);
+                    CSVReader reader2 = new CSVReader(new StringReader(content));
+                    CsvToBean<MailboxCSV> csvToBean = new CsvToBean<>();
+                    csvToBean.setCsvReader(reader2);
+                    csvToBean.setMappingStrategy(mailboxStrategy);
+                    List<MailboxCSV> mailboxCSVList = csvToBean.parse();
 
-		List<String> lines = Files.readAllLines(Paths.get(mailboxFilename));
-		if (lines.size() > 0 && (lines.get(0).contains("type") || lines.get(0).contains("Type"))) {
-			String type = getFileType(mailboxFilename);
-			if (type.equalsIgnoreCase(Types.AS2.name())) {
-				List<JsonElement> as2Jsons = createAS2Hosts(mailboxFilename);
-				for (JsonElement as2Host : as2Jsons) {
-					jsonArr.add(as2Host);
-				}
-			} else if (type.equalsIgnoreCase(Types.SFTP.name())) {
-				List<JsonElement> ftpJsons = createSFTPHosts(mailboxFilename);
-				for (JsonElement ftpHost : ftpJsons) {
-					jsonArr.add(ftpHost);
-				}
-			} else if (type.equalsIgnoreCase(Types.FTP.name())) {
-				List<JsonElement> ftpJsons = createFTPHosts(mailboxFilename);
-				for (JsonElement ftpHost : ftpJsons) {
-					jsonArr.add(ftpHost);
-				}
-			} else {
-				System.out.println("Invalid type specified: " + type);
-			}
-		} else {
-			HeaderColumnNameMappingStrategy mailboxStrategy = new HeaderColumnNameMappingStrategy<>();
-			mailboxStrategy.setType(MailboxCSV.class);
-			CSVReader reader2 = new CSVReader(new FileReader(mailboxFilename));
-			CsvToBean csvToBean = new CsvToBean();
-			csvToBean.setCsvReader(reader2);
-			csvToBean.setMappingStrategy(mailboxStrategy);
-			List<MailboxCSV> mailboxCSVList = csvToBean.parse();
-
-			for (MailboxCSV mailboxCSV : mailboxCSVList) {
-				jsonArr.add(contructMailboxJSON(mailboxCSV));
-			}
-		}
+                    for (MailboxCSV mailboxCSV : mailboxCSVList) {
+                        jsonArr.add(contructMailboxJSON(mailboxCSV));
+                    }
+                    break;
+                }
+            } catch (Exception e) {
+		        System.out.println("error: skipping file: "+e.getMessage());
+            }
+        }
         
-        FileWriter writer = new FileWriter(new File(ApplicationProperties.appProps.getProperty("jsonFile")));
-        gson.toJson(jsonArr, writer);
-        writer.close();
-	}
-
-	private static String getFileType(String filename) throws FileNotFoundException {
-		HeaderColumnNameMappingStrategy mailboxStrategy = new HeaderColumnNameMappingStrategy<>();
-		mailboxStrategy.setType(ClientCSV.class);
-		CSVReader reader2 = new CSVReader(new FileReader(filename));
-		CsvToBean csvToBean = new CsvToBean();
-		csvToBean.setCsvReader(reader2);
-		csvToBean.setMappingStrategy(mailboxStrategy);
-		List<ClientCSV> clientCsvList = csvToBean.parse();
-		String type = null;
-		for (ClientCSV clientHost : clientCsvList) {
-			if (type == null) {
-				type = clientHost.getType();
-			} else {
-				if (!clientHost.getType().equalsIgnoreCase(type)) {
-					System.err.println("All hosts must be the same type");
-					System.exit(-1);
-				}
-			}
+		Writer output;
+		if (cmd.hasOption("output")) {
+		    output = new FileWriter(cmd.getOptionValue("output"));
+		} else {
+		    output = new BufferedWriter(new OutputStreamWriter(System.out));
 		}
-		return type;
+        gson.toJson(jsonArr, output);
+        output.close();
 	}
 
-	private static List parseClientFile(String filename, Types type) {
-		Class targetClass = null;
-		com.cleo.services.harmony.CSVReader reader;
-		if (type.equals(Types.AS2))
-			targetClass = AS2CSV.class;
-		else if (type.equals(Types.SFTP))
-			targetClass = SFTPCSV.class;
-		else if (type.equals(Types.FTP))
-			targetClass = FTPCSV.class;
+	public static ArrayNode parseCSVFile(String content) throws Exception {
+	    ArrayNode file = mapper.createArrayNode();
+        try {
+            switch (getCSVFileType(content)) {
+            case AS2:
+                {
+                    List<AS2> connections = createAS2Hosts(content);
+                    for (AS2 connection : connections) {
+                        file.add(mapper.valueToTree(connection));
+                    }
+                }
+                break;
+            case SFTP:
+                {
+                    List<SFTP> connections = createSFTPHosts(content);
+                    for (SFTP connection : connections) {
+                        file.add(mapper.valueToTree(connection));
+                    }
+                }
+                break;
+            case FTP:
+                {
+                    List<FTP> connections = createFTPHosts(content);
+                    for (FTP connection : connections) {
+                        file.add(mapper.valueToTree(connection));
+                    }
+                }
+                break;
+            case GROUP:
+System.err.println("found type GROUP for\n```\n"+content+"```");
+                CSVReader grpReader = new CSVReader(new StringReader(content));
+                List<String[]> grpElements = grpReader.readAll();
+System.err.println("read "+grpReader.getLinesRead()+" lines");
+                for (String[] lines : grpElements) {
+                    if (!lines[0].equals("UserAlias")) {
+System.err.println("processing "+lines.toString());
+                        file.add(constructAuthenticator(lines));
+                    }
+                }
+                break;
+            case USER:
+                HeaderColumnNameMappingStrategy<MailboxCSV> mailboxStrategy = new HeaderColumnNameMappingStrategy<>();
+                mailboxStrategy.setType(MailboxCSV.class);
+                CSVReader reader2 = new CSVReader(new StringReader(content));
+                CsvToBean<MailboxCSV> csvToBean = new CsvToBean<>();
+                csvToBean.setCsvReader(reader2);
+                csvToBean.setMappingStrategy(mailboxStrategy);
+                List<MailboxCSV> mailboxCSVList = csvToBean.parse();
+
+                for (MailboxCSV mailboxCSV : mailboxCSVList) {
+                    file.add(constructUser(mailboxCSV));
+                }
+                break;
+            }
+        } catch (Exception e) {
+            System.out.println("error: skipping file: "+e.getMessage());
+        }
+	    return file;
+	}
+
+    public static Type getCSVFileType(String content) throws Exception {
+       String line = content.split("\n", 2)[0];
+        if (line.toLowerCase().startsWith("useralias")) {
+            return Type.GROUP;
+        } else if (!line.toLowerCase().contains("type")) {
+            return Type.USER;
+        }
+
+        List<ConnectionCSV> clientCsvList;
+        try (StringReader r = new StringReader(content)) {
+            HeaderColumnNameMappingStrategy<ConnectionCSV> mailboxStrategy = new HeaderColumnNameMappingStrategy<>();
+            mailboxStrategy.setType(ConnectionCSV.class);
+            CSVReader reader2 = new CSVReader(r);
+            CsvToBean<ConnectionCSV> csvToBean = new CsvToBean<>();
+            csvToBean.setCsvReader(reader2);
+            csvToBean.setMappingStrategy(mailboxStrategy);
+            clientCsvList = csvToBean.parse();
+        }
+        String type = null;
+        for (ConnectionCSV clientHost : clientCsvList) {
+            if (type == null) {
+                type = clientHost.getType();
+            } else {
+                if (!clientHost.getType().equalsIgnoreCase(type)) {
+                    throw new Exception("all connections must be the same type ("+type+")");
+                }
+            }
+        }
+        if (type.equalsIgnoreCase(Type.AS2.name())) {
+            return Type.AS2;
+        } else if (type.equalsIgnoreCase(Type.SFTP.name())) {
+            return Type.SFTP;
+        } else if (type.equalsIgnoreCase(Type.FTP.name())) {
+            return Type.FTP;
+        }
+        throw new Exception("unrecognized type \""+type+"\"");
+    }
+	   
+	private static <T> List<T> parseConnectionCSVFile(String content, Class<T> type) {
+		com.cleo.services.jsonToVersaLexRestAPI.csv.CSVReader<T> reader;
 		try {
-			reader = new com.cleo.services.harmony.CSVReader(filename, targetClass);
+			reader = new com.cleo.services.jsonToVersaLexRestAPI.csv.CSVReader<>(content, type);
 			return reader.readFile();
 		} catch (Exception e) {
 			return new ArrayList<>();
 		}
 	}
 
-	protected static List<JsonElement> createAS2Hosts(String filename) {
-		Gson gson = new Gson();
-		ArrayList<JsonElement> hosts = new ArrayList<>();
-		List<AS2CSV> as2CSVList = parseClientFile(filename, Types.AS2);
-		for (AS2CSV csv : as2CSVList) {
+	protected static List<AS2> createAS2Hosts(String content) {
+	    List<AS2> connections = new ArrayList<>();
+		for (AS2CSV csv : parseConnectionCSVFile(content, AS2CSV.class)) {
 			AS2 as2Host = new AS2();
 			as2Host.alias = csv.getAlias();
 			as2Host.connect.url = csv.getUrl();
@@ -169,7 +299,7 @@ public class ConvertCSVToHarmonyJSON {
 				recAction.commands = csv.getActionReceive().split(actionSeparatorRegex);
 				actions.add(recAction);
 			}
-			for (Action action : csv.getActions()) {
+			for (ActionCSV action : csv.getActions()) {
 				ActionPOJO actionPOJO = new ActionPOJO();
 				actionPOJO.alias = action.getAlias();
 				actionPOJO.commands = action.getCommands().split(actionSeparatorRegex);
@@ -177,16 +307,14 @@ public class ConvertCSVToHarmonyJSON {
 				actions.add(actionPOJO);
 			}
 			as2Host.actions = actions.toArray(new ActionPOJO[]{});
-			hosts.add(gson.toJsonTree(as2Host));
+			connections.add(as2Host);
 		}
-		return hosts;
+		return connections;
 	}
 
-	protected static List<JsonElement> createSFTPHosts(String filename) {
-		Gson gson = new Gson();
-		ArrayList<JsonElement> hosts = new ArrayList<>();
-		List<SFTPCSV> as2CSVList = parseClientFile(filename, Types.SFTP);
-		for (SFTPCSV csv : as2CSVList) {
+	protected static List<SFTP> createSFTPHosts(String content) {
+	    List<SFTP> connections = new ArrayList<>();
+		for (SFTPCSV csv : parseConnectionCSVFile(content, SFTPCSV.class)) {
 			SFTP sftpHost = new SFTP();
 			sftpHost.alias = csv.getAlias();
 			sftpHost.connect.host = csv.getHost();
@@ -213,16 +341,14 @@ public class ConvertCSVToHarmonyJSON {
 				actions.add(recAction);
 			}
 			sftpHost.actions = actions.toArray(new ActionPOJO[]{});
-			hosts.add(gson.toJsonTree(sftpHost));
+			connections.add(sftpHost);
 		}
-		return hosts;
+		return connections;
 	}
 
-	protected static List<JsonElement> createFTPHosts(String filename) {
-		Gson gson = new Gson();
-		ArrayList<JsonElement> hosts = new ArrayList<>();
-		List<FTPCSV> ftpCSVList = parseClientFile(filename, Types.FTP);
-		for (FTPCSV csv : ftpCSVList) {
+	protected static List<FTP> createFTPHosts(String content) {
+	    List<FTP> connections = new ArrayList<>();
+		for (FTPCSV csv : parseConnectionCSVFile(content, FTPCSV.class)) {
 			FTP ftpHost = new FTP();
 			ftpHost.alias = csv.getAlias();
 			ftpHost.connect.host = csv.getHost();
@@ -253,10 +379,137 @@ public class ConvertCSVToHarmonyJSON {
 				actions.add(recAction);
 			}
 			ftpHost.actions = actions.toArray(new ActionPOJO[]{});
-			hosts.add(gson.toJsonTree(ftpHost));
+			connections.add(ftpHost);
 		}
-		return hosts;
+		return connections;
 	}
+
+    private static ObjectNode loadTemplate(String template) throws Exception {
+        return (ObjectNode) mapper.readTree(Resources.toString(Resources.getResource(template), Charsets.UTF_8));
+    }
+
+    private static ObjectNode constructAuthenticator(String[] line) throws Exception {
+        ObjectNode authenticator = loadTemplate("csv.template.group.yaml");
+        authenticator.put("alias", line[0]);
+        REST.setSubElement(authenticator, "resourceFolder", line[1]);
+        REST.setSubElement(authenticator, "home.dir.default", line[2]);
+        // process subfolders
+        JsonNode existing = authenticator.path("home").path("subfolders").path("default");
+        ArrayNode subfolders = existing.isArray() ? (ArrayNode)existing : mapper.createArrayNode();
+        if(!line[3].isEmpty()) {
+            subfolders.add( mapper.createObjectNode()
+                    .put("usage", "download")
+                    .put("path", line[3]));
+        }
+        if(!line[4].isEmpty()) {
+            subfolders.add( mapper.createObjectNode()
+                    .put("usage", "upload")
+                    .put("path", line[4]));
+        }
+        if(!line[5].isEmpty()) {
+            for(String path :line[5].split(";")) {
+                subfolders.add( mapper.createObjectNode()
+                        .put("usage", "other")
+                        .put("path", path));
+            }
+        }
+        if (subfolders.size() > 0) {
+            REST.setSubElement(authenticator, "home.subfolders.default", subfolders);
+        }
+        // done with subfolders
+        REST.setSubElement(authenticator, "outgoing.storage.sentbox", line[6]);
+        REST.setSubElement(authenticator, "incoming.storage.receivedbox", line[7]);
+        if (line[8].equals("Yes")) {
+            REST.setSubElement(authenticator, "accept.ftp.enabled", true);
+        }
+        if (line[9].equals("Yes")) {
+            REST.setSubElement(authenticator, "accept.sftp.enabled", true);
+        }
+        if (line[10].equals("Yes")) {
+            REST.setSubElement(authenticator, "accept.http.enabled", true);
+        }
+        REST.setSubElement(authenticator, "home.access", line[11].toLowerCase());
+        return authenticator;
+    }
+
+    private static ObjectNode constructActions(MailboxCSV mailboxCSV) {
+        String actionSeparatorRegex = "[\\|;]";
+        String collectAlias = mailboxCSV.getCreateCollectName();
+        String[] collectCommands = mailboxCSV.getActionCollect().split(actionSeparatorRegex);
+        String receiveAlias = mailboxCSV.getCreateReceiveName();
+        String[] receiveCommands = mailboxCSV.getActionReceive().split(actionSeparatorRegex);
+        ObjectNode actions = mapper.createObjectNode();
+
+        if (!collectAlias.equalsIgnoreCase("NA")) {
+            ObjectNode action = mapper.createObjectNode();
+            action.put("alias", collectAlias);
+            ArrayNode commands = action.putArray("commands");
+            for (String command : collectCommands) commands.add(command);
+            String schedule = mailboxCSV.getSchedule_Collect();
+            if (!schedule.isEmpty() && !schedule.equalsIgnoreCase("none") && !schedule.equalsIgnoreCase("no")) {
+                if (schedule.equalsIgnoreCase("polling")) {
+                    action.put("schedule", "on file continuously");
+                } else {
+                    action.put("schedule", schedule);
+                }
+            }
+            actions.set(collectAlias, action);
+        }
+
+        if (!receiveAlias.equalsIgnoreCase("NA")) {
+            ObjectNode action = mapper.createObjectNode();
+            action.put("alias", receiveAlias);
+            ArrayNode commands = action.putArray("commands");
+            for (String command : receiveCommands) commands.add(command);
+            String schedule = mailboxCSV.getSchedule_Receive();
+            if (!schedule.isEmpty() && !schedule.equalsIgnoreCase("none") && !schedule.equalsIgnoreCase("no")) {
+                if (schedule.equalsIgnoreCase("polling")) {
+                    action.put("schedule", "on file continuously");
+                } else {
+                    action.put("schedule", schedule);
+                }
+            }
+            actions.set(receiveAlias, action);
+        }
+
+        return actions;
+    }
+
+    private static ObjectNode constructUser(MailboxCSV mailboxCSV) throws Exception {
+        ObjectNode user = loadTemplate("csv.template.user.yaml");
+        user.put("alias", mailboxCSV.getHost());
+        user.put("username", mailboxCSV.getUserID());
+        REST.setSubElement(user, "accept.password", mailboxCSV.getPassword());
+        if (mailboxCSV.getDefaultHomeDir().equalsIgnoreCase("Yes")) {
+            REST.setSubElement(user, "home.dir.default", mailboxCSV.getCustomHomeDir());
+        } else {
+            REST.setSubElement(user, "home.dir.override", mailboxCSV.getCustomHomeDir());
+        }
+        if (!mailboxCSV.getWhitelistIP().isEmpty()) {
+            ArrayNode whitelist = mapper.createArrayNode();
+            for (String ipaddr : mailboxCSV.getWhitelistIP().split(";")) {
+                whitelist.add(mapper.createObjectNode().put("ipAddress", ipaddr));
+            }
+            REST.setSubElement(user, "accept.whitelist", whitelist);
+        }
+        REST.setSubElement(user, "notes", mailboxCSV.getHostNotes());
+        if (!mailboxCSV.getOtherFolder().isEmpty()) {
+            JsonNode existing = user.path("home").path("subfolders").path("default");
+            ArrayNode subfolders = existing.isArray() ? (ArrayNode)existing : mapper.createArrayNode();
+            for (String path : mailboxCSV.getOtherFolder().split(";")) {
+                subfolders.add( mapper.createObjectNode()
+                        .put("usage", "other")
+                        .put("path", path));
+            }
+            REST.setSubElement(user, "home.subfolders.default", subfolders);
+        }
+        REST.setSubElement(user, "email", mailboxCSV.getEmail());
+        ObjectNode actions = constructActions(mailboxCSV);
+        if (actions.size() > 0) {
+            user.replace("actions", actions);
+        }
+        return user;
+    }
 
 	private static JsonObject  contructMailboxJSON(MailboxCSV mailboxCSV) throws JsonSyntaxException, IOException {
 		

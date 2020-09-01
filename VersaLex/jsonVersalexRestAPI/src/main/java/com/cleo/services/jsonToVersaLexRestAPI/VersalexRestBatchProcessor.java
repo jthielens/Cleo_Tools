@@ -14,6 +14,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.checkerframework.checker.formatter.qual.ConversionCategory;
+
+import com.cleo.services.jsonToVersaLexRestAPI.csv.ConvertCSVToHarmonyJSON;
+import com.cleo.services.jsonToVersaLexRestAPI.csv.ConvertCSVToHarmonyJSON.Type;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -182,7 +186,7 @@ public class VersalexRestBatchProcessor {
         return result;
     }
 
-    private ObjectNode loadTemplate(String template) throws Exception {
+    private static ObjectNode loadTemplate(String template) throws Exception {
         return (ObjectNode) mapper.readTree(Resources.toString(Resources.getResource(template), Charsets.UTF_8));
     }
 
@@ -465,14 +469,9 @@ public class VersalexRestBatchProcessor {
      * @return the modified node
      */
     private ObjectNode insertResult(ObjectNode node, boolean success, String message) {
-        ObjectNode update = node.objectNode();
-        ObjectNode result = update.putObject("result");
-        result.put("status", success ? "success" : "error");
-        if (!Strings.isNullOrEmpty(message)) {
-            result.put("message", message);
-        }
-        update.setAll(node);
-        return update;
+        ObjectNode result = REST.setSubElement((ObjectNode)node.get("result"), "status", success ? "success" : "error");
+        REST.setSubElement(result, "message", message);
+        return ((ObjectNode)mapper.createObjectNode().set("result", result)).setAll(node);
     }
 
     private static class StackTraceCapture extends PrintStream {
@@ -641,19 +640,66 @@ public class VersalexRestBatchProcessor {
 
 	/*- main file processor --------------------------------------------------*/
 
-    public void processFile(String fn) throws IOException {
-        JsonNode json = mapper.readTree(new String(Files.readAllBytes(Paths.get(fn))));
-        // file is a list of entries to process:
-        //   convert a single entry file into a list of one
-        ArrayNode file;
-        if (!json.isArray()) {
-            file = mapper.createArrayNode();
-            file.add(json);
-        } else {
-            file = (ArrayNode)json;
+    private ArrayNode prepareFile(String fn) throws Exception {
+        // load file content into a string
+        String content = fn.equals("-")
+                ? new String(ByteStreams.toByteArray(System.in))
+                : new String(Files.readAllBytes(Paths.get(fn)));
+        ArrayNode file = null;
+
+        // Option 1: try to load it as a JSON or YAML file
+        try {
+            JsonNode json = mapper.readTree(content);
+            // file is a list of entries to process:
+            //   convert a single entry file into a list of one
+            if (!json.isArray()) {
+                file = mapper.createArrayNode();
+                file.add(json);
+            } else {
+                file = (ArrayNode)json;
+                json = file.get(0);
+            }
+            // now file is an array and json is the first element: test it
+            if (json.isObject()) {
+                return file;
+            }
+        } catch (Exception notjson) {
+            // try something else
         }
-        ArrayNode results = file.arrayNode();
-        ArrayNode passwords = file.arrayNode();
+        file = null;
+
+        // Option 2: see if it can be loaded as CSV
+        //try {
+            file = ConvertCSVToHarmonyJSON.parseCSVFile(content);
+        //} catch (Exception e) {
+            //throw new ProcessingException(e.getMessage());
+        //}
+        return file;
+    }
+
+    public void processFiles(String[] fns) throws IOException {
+        ArrayNode results = mapper.createArrayNode();
+        ArrayNode passwords = mapper.createArrayNode();
+
+        for (String fn : fns) {
+            try {
+                ArrayNode file = prepareFile(fn);
+                processFile(file, results, passwords);
+            } catch (ProcessingException e) {
+                results.add(insertResult(REST.setSubElement(null, "result.file", fn), false, e.getMessage()));
+            } catch (Exception e) {
+                results.add(insertResult(REST.setSubElement(null, "result.file", fn), false, e));
+            }
+        }
+
+        cleanup(results);
+        if (passwords.size() > 0) {
+            results.add(passwordReport(passwords));
+        }
+        mapper.writeValue(System.out, results);
+    }
+
+    public void processFile(ArrayNode file, ArrayNode results, ArrayNode passwords) {
         Iterator<JsonNode> elements = file.elements();
         while (elements.hasNext()) {
             ObjectNode entry = (ObjectNode)elements.next();
@@ -698,11 +744,6 @@ public class VersalexRestBatchProcessor {
                 results.add(insertResult(original, false, e));
             }
         }
-        cleanup(results);
-        if (passwords.size() > 0) {
-            results.add(passwordReport(passwords));
-        }
-        mapper.writeValue(System.out, results);
     }
 
     public VersalexRestBatchProcessor(REST api) {

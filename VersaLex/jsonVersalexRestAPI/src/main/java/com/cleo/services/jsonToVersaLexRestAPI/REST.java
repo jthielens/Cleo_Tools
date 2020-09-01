@@ -336,6 +336,63 @@ public class REST {
 	    return node == null ? ifNull : node.asText(ifNull);
 	}
 
+	public static ObjectNode walkToSubElement(ObjectNode node, String[] key) {
+	    ObjectNode current = node;
+	    for (int i=0; i<key.length-1; i++) {
+	        JsonNode test = current.path(key[i]);
+	        if (test.isObject()) {
+	            current = (ObjectNode)test;
+	        } else {
+	            current = node.putObject(key[i]);
+	        }
+	    }
+	    return current;
+	}
+
+	public static ObjectNode setSubElement(ObjectNode node, String jsonKey, String value) {
+	    if (!Strings.isNullOrEmpty(value)) {
+	        if (node == null) {
+	            node = mapper.createObjectNode();
+	        }
+            String[] key = jsonKey.split("\\.");
+            walkToSubElement(node, key).put(key[key.length-1], value);
+	    }
+        return node;
+	}
+
+	public static ObjectNode setSubElement(ObjectNode node, String jsonKey, Integer value) {
+	    if (value != null) {
+	        if (node == null) {
+	            node = mapper.createObjectNode();
+	        }
+            String[] key = jsonKey.split("\\.");
+            walkToSubElement(node, key).put(key[key.length-1], value);
+	    }
+        return node;
+	}
+
+	public static ObjectNode setSubElement(ObjectNode node, String jsonKey, Boolean value) {
+	    if (value != null) {
+	        if (node == null) {
+	            node = mapper.createObjectNode();
+	        }
+            String[] key = jsonKey.split("\\.");
+            walkToSubElement(node, key).put(key[key.length-1], value);
+	    }
+        return node;
+	}
+
+    public static ObjectNode setSubElement(ObjectNode node, String jsonKey, JsonNode value) {
+        if (value != null) {
+            if (node == null) {
+                node = mapper.createObjectNode();
+            }
+            String[] key = jsonKey.split("\\.");
+            walkToSubElement(node, key).replace(key[key.length-1], value);
+        }
+        return node;
+    }
+
 	public static ObjectNode removeElements(ObjectNode node, String...elements) {
 	    for (String element : elements) {
 	        String[] kv = element.split("=", 2);

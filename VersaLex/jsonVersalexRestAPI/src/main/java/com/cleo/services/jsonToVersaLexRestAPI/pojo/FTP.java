@@ -1,4 +1,4 @@
-package com.cleo.services.harmony.pojo;
+package com.cleo.services.jsonToVersaLexRestAPI.pojo;
 
 public class FTP {
 

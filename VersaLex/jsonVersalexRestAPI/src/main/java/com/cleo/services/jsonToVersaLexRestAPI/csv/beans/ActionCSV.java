@@ -1,9 +1,9 @@
-package com.cleo.services.harmony;
+package com.cleo.services.jsonToVersaLexRestAPI.csv.beans;
 
 import lombok.Getter;
 import lombok.Setter;
 
-public class Action {
+public class ActionCSV {
   @Getter@Setter
   public String alias;
   @Getter@Setter

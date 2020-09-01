@@ -1,9 +1,9 @@
-package com.cleo.services.harmony;
+package com.cleo.services.jsonToVersaLexRestAPI.csv.beans;
 
 import lombok.Getter;
 import lombok.Setter;
 
-public class AS2CSV extends ClientCSV {
+public class AS2CSV extends ConnectionCSV {
 
   @Getter@Setter
   private String url;
