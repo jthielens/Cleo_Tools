@@ -4,7 +4,7 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.cleo.services.jsonToVersaLexRestAPI.REST;
+import com.cleo.services.jsonToVersaLexRestAPI.Json;
 import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.AS2CSV;
 import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.ActionCSV;
 import com.cleo.services.jsonToVersaLexRestAPI.csv.beans.ConnectionCSV;
@@ -270,8 +270,8 @@ public class ConvertCSVToHarmonyJSON {
     private static ObjectNode constructAuthenticator(String[] line) throws Exception {
         ObjectNode authenticator = loadTemplate("csv.template.group.yaml");
         authenticator.put("alias", line[0]);
-        REST.setSubElement(authenticator, "resourceFolder", line[1]);
-        REST.setSubElement(authenticator, "home.dir.default", line[2]);
+        Json.setSubElement(authenticator, "resourceFolder", line[1]);
+        Json.setSubElement(authenticator, "home.dir.default", line[2]);
         // process subfolders
         JsonNode existing = authenticator.path("home").path("subfolders").path("default");
         ArrayNode subfolders = existing.isArray() ? (ArrayNode)existing : mapper.createArrayNode();
@@ -293,21 +293,21 @@ public class ConvertCSVToHarmonyJSON {
             }
         }
         if (subfolders.size() > 0) {
-            REST.setSubElement(authenticator, "home.subfolders.default", subfolders);
+            Json.setSubElement(authenticator, "home.subfolders.default", subfolders);
         }
         // done with subfolders
-        REST.setSubElement(authenticator, "outgoing.storage.sentbox", line[6]);
-        REST.setSubElement(authenticator, "incoming.storage.receivedbox", line[7]);
+        Json.setSubElement(authenticator, "outgoing.storage.sentbox", line[6]);
+        Json.setSubElement(authenticator, "incoming.storage.receivedbox", line[7]);
         if (line[8].equals("Yes")) {
-            REST.setSubElement(authenticator, "accept.ftp.enabled", true);
+            Json.setSubElement(authenticator, "accept.ftp.enabled", true);
         }
         if (line[9].equals("Yes")) {
-            REST.setSubElement(authenticator, "accept.sftp.enabled", true);
+            Json.setSubElement(authenticator, "accept.sftp.enabled", true);
         }
         if (line[10].equals("Yes")) {
-            REST.setSubElement(authenticator, "accept.http.enabled", true);
+            Json.setSubElement(authenticator, "accept.http.enabled", true);
         }
-        REST.setSubElement(authenticator, "home.access", line[11].toLowerCase());
+        Json.setSubElement(authenticator, "home.access", line[11].toLowerCase());
         return authenticator;
     }
 
@@ -358,20 +358,20 @@ public class ConvertCSVToHarmonyJSON {
         ObjectNode user = loadTemplate("csv.template.user.yaml");
         user.put("alias", mailboxCSV.getHost());
         user.put("username", mailboxCSV.getUserID());
-        REST.setSubElement(user, "accept.password", mailboxCSV.getPassword());
+        Json.setSubElement(user, "accept.password", mailboxCSV.getPassword());
         if (mailboxCSV.getDefaultHomeDir().equalsIgnoreCase("Yes")) {
-            REST.setSubElement(user, "home.dir.default", mailboxCSV.getCustomHomeDir());
+            Json.setSubElement(user, "home.dir.default", mailboxCSV.getCustomHomeDir());
         } else {
-            REST.setSubElement(user, "home.dir.override", mailboxCSV.getCustomHomeDir());
+            Json.setSubElement(user, "home.dir.override", mailboxCSV.getCustomHomeDir());
         }
         if (!mailboxCSV.getWhitelistIP().isEmpty()) {
             ArrayNode whitelist = mapper.createArrayNode();
             for (String ipaddr : mailboxCSV.getWhitelistIP().split(";")) {
                 whitelist.add(mapper.createObjectNode().put("ipAddress", ipaddr));
             }
-            REST.setSubElement(user, "accept.whitelist", whitelist);
+            Json.setSubElement(user, "accept.whitelist", whitelist);
         }
-        REST.setSubElement(user, "notes", mailboxCSV.getHostNotes());
+        Json.setSubElement(user, "notes", mailboxCSV.getHostNotes());
         if (!mailboxCSV.getOtherFolder().isEmpty()) {
             JsonNode existing = user.path("home").path("subfolders").path("default");
             ArrayNode subfolders = existing.isArray() ? (ArrayNode)existing : mapper.createArrayNode();
@@ -380,9 +380,9 @@ public class ConvertCSVToHarmonyJSON {
                         .put("usage", "other")
                         .put("path", path));
             }
-            REST.setSubElement(user, "home.subfolders.default", subfolders);
+            Json.setSubElement(user, "home.subfolders.default", subfolders);
         }
-        REST.setSubElement(user, "email", mailboxCSV.getEmail());
+        Json.setSubElement(user, "email", mailboxCSV.getEmail());
         ObjectNode actions = constructActions(mailboxCSV);
         if (actions.size() > 0) {
             user.replace("actions", actions);

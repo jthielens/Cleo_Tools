@@ -16,10 +16,8 @@ import java.util.stream.Collectors;
 
 import com.cleo.services.jsonToVersaLexRestAPI.csv.ConvertCSVToHarmonyJSON;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.google.common.base.Charsets;
 import com.google.common.base.Strings;
 import com.google.common.io.ByteStreams;
@@ -68,44 +66,42 @@ public class VersalexRestBatchProcessor {
             .map(AuthenticatorType::name)
             .collect(Collectors.toSet());
 
-    private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-
     private Map<String, ObjectNode> authenticatorCache = new HashMap<>();
 
     private void createActions(ObjectNode actions, ObjectNode resource) throws Exception {
         if (actions != null && actions.size() > 0) {
             ObjectNode updated = (ObjectNode)resource.get("actions");
             if (updated == null) {
-                updated = resource.objectNode();
+                updated = Json.mapper.createObjectNode();
             } else {
                 updated = updated.deepCopy();
             }
-            String type = REST.getSubElementAsText(resource, "meta.resourceType");
+            String type = Json.getSubElementAsText(resource, "meta.resourceType");
             Iterator<JsonNode> elements = actions.elements();
             while (elements.hasNext()) {
                 ObjectNode action = (ObjectNode) elements.next();
                 if (action != null && action.isObject()) {
-                    String actionName = REST.getSubElementAsText(action, "alias", "");
+                    String actionName = Json.getSubElementAsText(action, "alias", "");
                     if (!actionName.isEmpty() && !actionName.equals("NA")) {
                         action.put("enabled", true);
                         action.put("type", "Commands");
                         switch (type) {
                         case "user":
                             action.putObject("authenticator")
-                                    .put("href", REST.getSubElementAsText(resource, "_links.authenticator.href"))
-                                    .putObject("user").put("href", REST.getHref(resource));
+                                    .put("href", Json.getSubElementAsText(resource, "_links.authenticator.href"))
+                                    .putObject("user").put("href", Json.getHref(resource));
                             break;
                         case "authenticator":
-                            action.putObject("authenticator").put("href", REST.getHref(resource));
+                            action.putObject("authenticator").put("href", Json.getHref(resource));
                             break;
                         default:
                         }
-                        action.putObject("connection").put("href", REST.getHref(resource));
-                        String schedule = REST.getSubElementAsText(action, "schedule", "");
+                        action.putObject("connection").put("href", Json.getHref(resource));
+                        String schedule = Json.getSubElementAsText(action, "schedule", "");
                         if (schedule.isEmpty() || schedule.equals("none") || schedule.equals("no")) {
                             action.remove("schedule");
                         }
-                        Operation operation = Operation.valueOf(REST.asText(action.remove("operation"), "add"));
+                        Operation operation = Operation.valueOf(Json.asText(action.remove("operation"), "add"));
                         JsonNode existing = updated.get(actionName);
                         if (existing == null) {
                             if (!operation.equals(Operation.delete)) {
@@ -153,11 +149,11 @@ public class VersalexRestBatchProcessor {
         //   username: username
         //   email: email
         //   password: encrypted password
-        String password = REST.getSubElement(entry, "accept.password").asText();
+        String password = Json.getSubElement(entry, "accept.password").asText();
         String encrypted = Strings.isNullOrEmpty(exportPassword)
                 ? password
                 : OpenSSLCrypt.encrypt(exportPassword, password);
-        ObjectNode result = mapper.createObjectNode();
+        ObjectNode result = Json.mapper.createObjectNode();
         result.put("alias", authenticator);
         result.put("username", entry.get("username").asText());
         result.put("email", entry.get("email").asText());
@@ -166,7 +162,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode updateResource(ObjectNode object, ObjectNode updates) throws Exception {
-        String type = REST.getSubElementAsText(object, "meta.resourceType", "");
+        String type = Json.getSubElementAsText(object, "meta.resourceType", "");
         ObjectNode updated = object.deepCopy();
         if (type.equals("user")) {
             updated.remove("alias"); // this is used as the authenticator alias, which isn't present in the real API
@@ -174,7 +170,7 @@ public class VersalexRestBatchProcessor {
         }
         JsonNode actions = updated.remove("actions");
         updated.setAll(updates);
-        String href = REST.getHref(updated);
+        String href = Json.getHref(updated);
         cleanup(updated);
         ObjectNode result = api.put(updated, href);
         if (actions != null) {
@@ -184,7 +180,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private static ObjectNode loadTemplate(String template) throws Exception {
-        return (ObjectNode) mapper.readTree(Resources.toString(Resources.getResource(template), Charsets.UTF_8));
+        return (ObjectNode) Json.mapper.readTree(Resources.toString(Resources.getResource(template), Charsets.UTF_8));
     }
 
     private ObjectNode getAuthenticator(String alias) throws Exception {
@@ -201,9 +197,9 @@ public class VersalexRestBatchProcessor {
     }
 
     private String getAliasOrUsername(ObjectNode object) {
-        String alias = REST.getSubElementAsText(object, "username");
+        String alias = Json.getSubElementAsText(object, "username");
         if (alias == null) {
-            alias = REST.getSubElementAsText(object, "alias");
+            alias = Json.getSubElementAsText(object, "alias");
         }
         return alias;
     }
@@ -223,11 +219,11 @@ public class VersalexRestBatchProcessor {
         if (actions != null && actions.isArray()) {
             // convert from [ {alias=x, ...}, {alias=y, ...} ] to { x:{alias=x, ...},
             // y:{alias=y, ...} }
-            ObjectNode map = ((ArrayNode) actions).objectNode();
+            ObjectNode map = Json.mapper.createObjectNode();
             Iterator<JsonNode> elements = ((ArrayNode) actions).elements();
             while (elements.hasNext()) {
                 JsonNode action = elements.next();
-                String alias = REST.getSubElementAsText(action, "alias");
+                String alias = Json.getSubElementAsText(action, "alias");
                 if (alias == null) {
                     throw new ProcessingException("action found with missing alias: " + action.toPrettyString());
                 }
@@ -245,12 +241,12 @@ public class VersalexRestBatchProcessor {
     private ObjectNode injectActions(ObjectNode resource) throws Exception {
         JsonNode actionlinks = resource.path("_links").path("actions");
         if (!actionlinks.isMissingNode()) {
-            ObjectNode actions = resource.objectNode();
+            ObjectNode actions = Json.mapper.createObjectNode();
             Iterator<JsonNode> elements = actionlinks.elements();
             while (elements.hasNext()) {
                 JsonNode actionlink = elements.next();
-                ObjectNode action = api.get(REST.getSubElementAsText(actionlink, "href"));
-                actions.set(REST.getSubElementAsText(action, "alias"), action);
+                ObjectNode action = api.get(Json.getSubElementAsText(actionlink, "href"));
+                actions.set(Json.getSubElementAsText(action, "alias"), action);
             }
             if (actions.size() > 0) {
                 resource.set("actions", actions);
@@ -272,11 +268,11 @@ public class VersalexRestBatchProcessor {
         // inject Authenticator
         JsonNode authenticatorlink = user.path("_links").path("authenticator");
         if (!authenticatorlink.isMissingNode()) {
-            ObjectNode authenticator = api.get(REST.getSubElementAsText(authenticatorlink, "href"));
-            String alias = REST.getSubElementAsText(authenticator, "alias");
+            ObjectNode authenticator = api.get(Json.getSubElementAsText(authenticatorlink, "href"));
+            String alias = Json.getSubElementAsText(authenticator, "alias");
             if (alias != null) {
                 // set host, but reorder things to get it near the top
-                ObjectNode update = user.objectNode();
+                ObjectNode update = Json.mapper.createObjectNode();
                 update.set("id", user.get("id"));
                 update.set("username", user.get("username"));
                 update.set("email",  user.get("email"));
@@ -297,7 +293,7 @@ public class VersalexRestBatchProcessor {
         List<ObjectNode> result = new ArrayList<>();
         // collect users, if requested
         if (includeUsers) {
-            String userlink = REST.getSubElementAsText(authenticator, "_links.users.href");
+            String userlink = Json.getSubElementAsText(authenticator, "_links.users.href");
 			REST.JsonCollection users = api.new JsonCollection(userlink);
 			while (users.hasNext()) {
 			    ObjectNode user = users.next();
@@ -332,7 +328,7 @@ public class VersalexRestBatchProcessor {
             Iterator<JsonNode> elements = actions.elements();
             while (elements.hasNext()) {
                 ObjectNode action = (ObjectNode)elements.next();
-                REST.removeElements(action,
+                Json.removeElements(action,
                         "active",
                         "editable",
                         "runnable",
@@ -350,7 +346,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode cleanupUser(ObjectNode user) {
-        REST.removeElements(user,
+        Json.removeElements(user,
                 "active",
                 "editable",
                 "runnable",
@@ -369,7 +365,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode cleanupAuthenticator(ObjectNode authenticator) {
-        REST.removeElements(authenticator,
+        Json.removeElements(authenticator,
                 "active",
                 "editable",
                 "runnable",
@@ -418,7 +414,7 @@ public class VersalexRestBatchProcessor {
 
     private ObjectNode cleanupConnection(ObjectNode connection) {
         // TODO: this may need more work, but maybe not
-        REST.removeElements(connection,
+        Json.removeElements(connection,
                 "active",
                 "editable",
                 "runnable",
@@ -431,7 +427,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode cleanup(ObjectNode resource) {
-        String type = REST.getSubElementAsText(resource, "meta.resourceType", "");
+        String type = Json.getSubElementAsText(resource, "meta.resourceType", "");
         switch (type) {
         case "user":
             return cleanupUser(resource);
@@ -466,9 +462,9 @@ public class VersalexRestBatchProcessor {
      * @return the modified node
      */
     private ObjectNode insertResult(ObjectNode node, boolean success, String message) {
-        ObjectNode result = REST.setSubElement((ObjectNode)node.get("result"), "status", success ? "success" : "error");
-        REST.setSubElement(result, "message", message);
-        return ((ObjectNode)mapper.createObjectNode().set("result", result)).setAll(node);
+        ObjectNode result = Json.setSubElement((ObjectNode)node.get("result"), "status", success ? "success" : "error");
+        Json.setSubElement(result, "message", message);
+        return ((ObjectNode)Json.mapper.createObjectNode().set("result", result)).setAll(node);
     }
 
     private static class StackTraceCapture extends PrintStream {
@@ -490,7 +486,7 @@ public class VersalexRestBatchProcessor {
     private ObjectNode insertResult(ObjectNode node, boolean success, Exception e) {
         ObjectNode update = insertResult(node, success, e.getMessage());
         if (!(e instanceof ProcessingException)) {
-            ArrayNode trace = update.arrayNode();
+            ArrayNode trace = Json.mapper.createArrayNode();
             e.printStackTrace(new StackTraceCapture(trace));
             ObjectNode result = (ObjectNode)update.get("result");
             result.set("trace", trace);
@@ -508,7 +504,7 @@ public class VersalexRestBatchProcessor {
         //     username: username
         //     email: email
         //     password: encrypted password
-        ObjectNode passwordReport = mapper.createObjectNode();
+        ObjectNode passwordReport = Json.mapper.createObjectNode();
         passwordReport.set("passwords", passwords);
         return insertResult(passwordReport, true, "generated passwords");
     }
@@ -517,7 +513,7 @@ public class VersalexRestBatchProcessor {
 
     private ObjectNode processAddUser(ObjectNode entry, ObjectNode actions, ArrayNode results, ArrayNode passwords) throws Exception {
         // get or create the authenticator identified by "alias"
-        String alias = REST.asText(entry.remove("alias"));
+        String alias = Json.asText(entry.remove("alias"));
         if (alias == null) {
             throw new ProcessingException("\"alias\" (authenticator alias) required when adding a user");
         }
@@ -540,7 +536,7 @@ public class VersalexRestBatchProcessor {
         if (actions != null) {
             createActions(actions, user);
         }
-        results.add(insertResult(user, true, String.format("created %s", REST.getSubElementAsText(user, "username"))));
+        results.add(insertResult(user, true, String.format("created %s", Json.getSubElementAsText(user, "username"))));
         return user;
     }
 
@@ -553,7 +549,7 @@ public class VersalexRestBatchProcessor {
             createActions(actions, authenticator);
         }
         results.add(insertResult(authenticator, true, String.format("created %s",
-                REST.getSubElementAsText(authenticator, "alias"))));
+                Json.getSubElementAsText(authenticator, "alias"))));
         return authenticator;
     }
 
@@ -567,12 +563,12 @@ public class VersalexRestBatchProcessor {
             createActions(actions, connection);
         }
         results.add(insertResult(connection, true, String.format("created %s",
-                REST.getSubElementAsText(connection, "alias"))));
+                Json.getSubElementAsText(connection, "alias"))));
         return connection;
     }
 
     private ObjectNode processAdd(ObjectNode entry, ObjectNode actions, ArrayNode results, ArrayNode passwords) throws Exception {
-        String type = REST.getSubElementAsText(entry, "type", "user");
+        String type = Json.getSubElementAsText(entry, "type", "user");
         if (type.equals("user")) {
             entry.remove("type");
             return processAddUser(entry, actions, results, passwords);
@@ -586,7 +582,7 @@ public class VersalexRestBatchProcessor {
 	/*- list processors ------------------------------------------------------*/
 
     private ObjectNode processListUser(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
-        String username = REST.getSubElementAsText(entry, "username");
+        String username = Json.getSubElementAsText(entry, "username");
         if (username == null) {
             throw new ProcessingException("\"username\" not found");
         }
@@ -597,7 +593,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode processListAuthenticator(ObjectNode entry, ArrayNode results, Operation operation, boolean includeUsers) throws Exception {
-        String alias = REST.getSubElementAsText(entry, "alias");
+        String alias = Json.getSubElementAsText(entry, "alias");
         if (alias == null) {
             throw new ProcessingException("\"alias\" not found");
         }
@@ -613,7 +609,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode processListConnection(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
-        String alias = REST.getSubElementAsText(entry, "alias");
+        String alias = Json.getSubElementAsText(entry, "alias");
         if (alias == null) {
             throw new ProcessingException("\"alias\" not found");
         }
@@ -624,7 +620,7 @@ public class VersalexRestBatchProcessor {
     }
 
     private ObjectNode processList(ObjectNode entry, ArrayNode results, Operation operation) throws Exception {
-        String type = REST.getSubElementAsText(entry, "type", "user");
+        String type = Json.getSubElementAsText(entry, "type", "user");
         if (type.equals("user")) {
             return processListUser(entry, results, operation);
         } else if (AUTH_TYPES.contains(type)) {
@@ -646,11 +642,11 @@ public class VersalexRestBatchProcessor {
 
         // Option 1: try to load it as a JSON or YAML file
         try {
-            JsonNode json = mapper.readTree(content);
+            JsonNode json = Json.mapper.readTree(content);
             // file is a list of entries to process:
             //   convert a single entry file into a list of one
             if (!json.isArray()) {
-                file = mapper.createArrayNode();
+                file = Json.mapper.createArrayNode();
                 file.add(json);
             } else {
                 file = (ArrayNode)json;
@@ -675,17 +671,17 @@ public class VersalexRestBatchProcessor {
     }
 
     public void processFiles(String[] fns) throws IOException {
-        ArrayNode results = mapper.createArrayNode();
-        ArrayNode passwords = mapper.createArrayNode();
+        ArrayNode results = Json.mapper.createArrayNode();
+        ArrayNode passwords = Json.mapper.createArrayNode();
 
         for (String fn : fns) {
             try {
                 ArrayNode file = prepareFile(fn);
                 processFile(file, results, passwords);
             } catch (ProcessingException e) {
-                results.add(insertResult(REST.setSubElement(null, "result.file", fn), false, e.getMessage()));
+                results.add(insertResult(Json.setSubElement(null, "result.file", fn), false, e.getMessage()));
             } catch (Exception e) {
-                results.add(insertResult(REST.setSubElement(null, "result.file", fn), false, e));
+                results.add(insertResult(Json.setSubElement(null, "result.file", fn), false, e));
             }
         }
 
@@ -693,7 +689,7 @@ public class VersalexRestBatchProcessor {
         if (passwords.size() > 0) {
             results.add(passwordReport(passwords));
         }
-        mapper.writeValue(System.out, results);
+        Json.mapper.writeValue(System.out, results);
     }
 
     public void processFile(ArrayNode file, ArrayNode results, ArrayNode passwords) {
@@ -702,7 +698,7 @@ public class VersalexRestBatchProcessor {
             ObjectNode entry = (ObjectNode)elements.next();
             ObjectNode original = entry.deepCopy();
             try {
-                Operation operation = Operation.valueOf(REST.asText(entry.remove("operation"),
+                Operation operation = Operation.valueOf(Json.asText(entry.remove("operation"),
                         options.contains(Option.update) ? "update" : "add"));
                 // collect actions into an ObjectNode
                 ObjectNode actions = normalizeActions(entry.remove("actions"));
@@ -715,7 +711,7 @@ public class VersalexRestBatchProcessor {
                     break;
                 case update:
                     {
-                        ArrayNode tempResults = entry.arrayNode();
+                        ArrayNode tempResults = Json.mapper.createArrayNode();
                         ObjectNode toUpdate = processList(entry, tempResults, operation);
                         ObjectNode updated = updateResource(toUpdate, entry);
                         if (actions != null) {
@@ -728,7 +724,7 @@ public class VersalexRestBatchProcessor {
                     break;
                 case delete:
                     {
-                        ArrayNode tempResults = entry.arrayNode();
+                        ArrayNode tempResults = Json.mapper.createArrayNode();
                         ObjectNode toDelete = processList(entry, tempResults, operation);
                         api.delete(toDelete);
                         results.addAll(tempResults);

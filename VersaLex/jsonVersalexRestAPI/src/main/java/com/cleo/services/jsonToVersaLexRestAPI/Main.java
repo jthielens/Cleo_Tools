@@ -3,20 +3,6 @@ package com.cleo.services.jsonToVersaLexRestAPI;
 import static com.cleo.services.jsonToVersaLexRestAPI.VersalexRestBatchProcessor.Option.generatePass;
 import static com.cleo.services.jsonToVersaLexRestAPI.VersalexRestBatchProcessor.Option.update;
 
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.Options;
-
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.google.common.base.Strings;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -27,9 +13,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public class Main {
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
 
-    private static final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.google.common.base.Strings;
+
+public class Main {
 
     private static Options getOptions() {
         Options options = new Options();
@@ -146,7 +142,7 @@ public class Main {
         Path cic = Paths.get(System.getProperty("user.home"), ".cic");
         Path filename = cic.resolve("profiles");
         try {
-            Map<String, Profile> profiles = mapper.readValue(filename.toFile(), typeRef);
+            Map<String, Profile> profiles = Json.mapper.readValue(filename.toFile(), typeRef);
             return profiles.get(name);
         } catch (JsonParseException | JsonMappingException e) {
             System.err.println("error parsing file "+filename+": "+ e.getMessage());
@@ -166,7 +162,7 @@ public class Main {
             File file = filename.toFile();
             Map<String, Profile> profiles;
             try {
-                profiles = mapper.readValue(file, typeRef);
+                profiles = Json.mapper.readValue(file, typeRef);
             } catch (IOException e) {
                 System.err.println(filename+" not found while removing profile "+name+": "+e.getMessage());
                 return; // no file, nothing to remove
@@ -176,7 +172,7 @@ public class Main {
                 return; // nothing to remove
             }
             profiles.remove(name);
-            mapper.writeValue(filename.toFile(), profiles);
+            Json.mapper.writeValue(filename.toFile(), profiles);
         } catch (JsonParseException | JsonMappingException e) {
             System.err.println("error parsing file "+filename+": " + e.getMessage());
         } catch (IOException e) {
@@ -195,12 +191,12 @@ public class Main {
             File file = filename.toFile();
             Map<String, Profile> profiles;
             try {
-                profiles = mapper.readValue(file, typeRef);
+                profiles = Json.mapper.readValue(file, typeRef);
             } catch (IOException e) {
                 profiles = new HashMap<>();
             }
             profiles.put(name, profile);
-            mapper.writeValue(filename.toFile(), profiles);
+            Json.mapper.writeValue(filename.toFile(), profiles);
         } catch (JsonParseException | JsonMappingException e) {
             System.err.println("error parsing file "+filename+": " + e.getMessage());
         } catch (IOException e) {
